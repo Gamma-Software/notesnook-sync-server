@@ -24,11 +24,13 @@ using System.Threading.Tasks;
 using System.Security.Claims;
 using Notesnook.API.Interfaces;
 using System;
+using Microsoft.AspNetCore.Cors;
 
 namespace Notesnook.API.Controllers
 {
     [ApiController]
     [Route("s3")]
+    [EnableCors("notesnook")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public class S3Controller : ControllerBase
     {

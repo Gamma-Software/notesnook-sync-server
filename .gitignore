@@ -266,3 +266,4 @@ dist/
 keystore/
 .env.local
 Notesnook.API/sync/
+Notesnook.API/.DS_Store

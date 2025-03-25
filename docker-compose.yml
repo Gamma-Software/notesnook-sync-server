@@ -9,6 +9,8 @@ x-server-discovery: &server-discovery
   IDENTITY_SERVER_URL: ${AUTH_SERVER_PUBLIC_URL}
   NOTESNOOK_APP_HOST: ${NOTESNOOK_APP_PUBLIC_URL}
 
+name: notesnook
+
 x-env-files: &env-files
   - .env
 
@@ -20,7 +22,6 @@ services:
     command:
       - -c
       - |
-        # List of required environment variables
         required_vars=(
           "INSTANCE_NAME"
           "NOTESNOOK_API_SECRET"
@@ -34,29 +35,23 @@ services:
           "MONOGRAPH_PUBLIC_URL"
           "ATTACHMENTS_SERVER_PUBLIC_URL"
         )
-
-        # Check each required environment variable
         for var in "$${required_vars[@]}"; do
           if [ -z "$${!var}" ]; then
             echo "Error: Required environment variable $$var is not set."
             exit 1
           fi
         done
-
         echo "All required environment variables are set."
-    # Ensure the validate service runs first
     restart: "no"
 
   notesnook-db:
     image: mongo:7.0.12
     hostname: notesnook-db
     volumes:
-      - /home/valentinrudloff/workspace/boilerplates/docker-compose/notesnook-sync-server/data/db:/data/db
-      - /home/valentinrudloff/workspace/boilerplates/docker-compose/notesnook-sync-server/data/db:/data/configdb
+      - ./data/db:/data/db
+      - ./data/db:/data/configdb
     networks:
       - notesnook
-      - backend
-      - frontend
     command: --replSet rs0 --bind_ip_all
     depends_on:
       validate:
@@ -67,36 +62,30 @@ services:
       timeout: 30s
       retries: 3
       start_period: 60s
-  # the notesnook sync server requires transactions which only work
-  # with a MongoDB replica set.
-  # This job just runs `rs.initiate()` on our mongodb instance
-  # upgrading it to a replica set. This is only required once but we running
-  # it multiple times is no issue.
-  initiate-rs0:
-    image: mongo:7.0.12
+    restart: on-failure
+
+  mongo-express:
+    image: mongo-express
+    hostname: mongo-express
     networks:
       - notesnook
+    environment:
+      ME_CONFIG_MONGODB_SERVER: notesnook-db
+    ports:
+      - 8081:8081
     depends_on:
       - notesnook-db
-    entrypoint: /bin/sh
-    command:
-      - -c
-      - |
-        mongosh mongodb://notesnook-db:27017 <<EOF
-          rs.initiate();
-          rs.status();
-        EOF
 
   notesnook-s3:
     image: minio/minio:RELEASE.2024-07-29T22-14-52Z
+    hostname: s3-server
     ports:
-      - 9123:9000
+      - 9009:9000
+      - 9090:9090
     networks:
       - notesnook
-      - backend
-      - frontend
     volumes:
-      - /home/valentinrudloff/workspace/boilerplates/docker-compose/notesnook-sync-server/data/s3:/data/s3
+      - ./data/s3:/data/s3
     environment:
       MINIO_BROWSER: "on"
     depends_on:
@@ -111,35 +100,31 @@ services:
       retries: 3
       start_period: 60s
 
-  # There's no way to specify a default bucket in Minio so we have to
-  # set it up ourselves.
   setup-s3:
     image: minio/mc:RELEASE.2024-07-26T13-08-44Z
     depends_on:
       - notesnook-s3
     networks:
       - notesnook
-      - backend
-      - frontend
     entrypoint: /bin/bash
     env_file: *env-files
     command:
       - -c
       - |
-        until mc alias set minio http://notesnook-s3:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin}; do
+        until mc alias set minio http://notesnook-s3:9000 minio NATKfazyH8vfXh9AwXcm4uAe2zZP7pEWne; do
           sleep 1;
         done;
         mc mb minio/attachments -p
 
   identity-server:
     image: streetwriters/identity:latest
+    hostname: identity-server
     ports:
       - 8264:8264
     networks:
       - notesnook
-      - backend
-      - frontend
     env_file: *env-files
+    restart: on-failure
     depends_on:
       - notesnook-db
     healthcheck:
@@ -155,12 +140,11 @@ services:
 
   notesnook-server:
     image: streetwriters/notesnook-sync:latest
+    hostname: sync-server
     ports:
       - 5264:5264
     networks:
       - notesnook
-      - backend
-      - frontend
     env_file: *env-files
     depends_on:
       - notesnook-s3
@@ -176,7 +160,7 @@ services:
       <<: *server-discovery
       MONGODB_CONNECTION_STRING: mongodb://notesnook-db:27017/?replSet=rs0
       MONGODB_DATABASE_NAME: notesnook
-      S3_INTERNAL_SERVICE_URL: "http://notesnook-s3:9000"
+      S3_INTERNAL_SERVICE_URL: "http://localhost:9009"
       S3_INTERNAL_BUCKET_NAME: "attachments"
       S3_ACCESS_KEY_ID: "${MINIO_ROOT_USER:-minioadmin}"
       S3_ACCESS_KEY: "${MINIO_ROOT_PASSWORD:-minioadmin}"
@@ -184,8 +168,19 @@ services:
       S3_REGION: "us-east-1"
       S3_BUCKET_NAME: "attachments"
 
+  initiate-rs0:
+    image: mongo:7.0.12
+    networks:
+      - notesnook
+    depends_on:
+      - notesnook-db
+    restart: on-failure
+    command: >
+      mongosh mongodb://notesnook-db:27017 --eval "rs.initiate(); rs.status();"
+
   sse-server:
     image: streetwriters/sse:latest
+    hostname: sse-server
     ports:
       - 7264:7264
     env_file: *env-files
@@ -194,8 +189,6 @@ services:
       - notesnook-server
     networks:
       - notesnook
-      - backend
-      - frontend
     healthcheck:
       test: wget --tries=1 -nv -q  http://localhost:7264/health -O- || exit 1
       interval: 40s
@@ -206,7 +199,8 @@ services:
       <<: *server-discovery
 
   monograph-server:
-    image: streetwriters/monograph:latest
+    image: medinote-monograph:latest
+    hostname: monograph-server
     ports:
       - 6264:3000
     env_file: *env-files
@@ -214,8 +208,6 @@ services:
       - notesnook-server
     networks:
       - notesnook
-      - backend
-      - frontend
     healthcheck:
       test: wget --tries=1 -nv -q  http://localhost:3000/api/health -O- || exit 1
       interval: 40s
@@ -224,27 +216,8 @@ services:
       start_period: 60s
     environment:
       <<: *server-discovery
-      API_HOST: http://notesnook-server:5264
+      API_HOST: http://notesnook-server:5264/
       PUBLIC_URL: ${MONOGRAPH_PUBLIC_URL}
 
-  autoheal:
-    image: willfarrell/autoheal:latest
-    tty: true
-    restart: always
-    environment:
-      - AUTOHEAL_INTERVAL=60
-      - AUTOHEAL_START_PERIOD=300
-      - AUTOHEAL_DEFAULT_STOP_TIMEOUT=10
-    depends_on:
-      validate:
-        condition: service_completed_successfully
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
 networks:
   notesnook:
-  aiop_prod_backend:
-    external: true
-  backend:
-    external: true
-  frontend:
-    external: true
