@@ -85,7 +85,7 @@ This takes care of setting up everything including MongoDB, Minio etc.
 ```
 This file is part of the Notesnook Sync Server project (https://notesnook.com/)
 
-Copyright (C) 2023 Streetwriters (Private) Limited
+Copyright (C) 2025 Leaptech EURL
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the Affero GNU General Public License as published by
