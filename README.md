@@ -80,6 +80,15 @@ This takes care of setting up everything including MongoDB, Minio etc.
 - [x] Add settings to change server URLs in Notesnook client apps (starting from v3.0.18)
 - [ ] Write self hosting docs
 
+
+### Install GMAIL STMP
+
+```
+SMTP_USERNAME=xxx@gmail.com
+SMTP_PASSWORD="password"
+```
+The password is found here:
+
 ## License
 
 ```
