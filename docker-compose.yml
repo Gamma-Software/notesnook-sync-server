@@ -174,7 +174,6 @@ services:
       - notesnook
     depends_on:
       - notesnook-db
-    restart: on-failure
     command: >
       mongosh mongodb://notesnook-db:27017 --eval "rs.initiate(); rs.status();"
 
