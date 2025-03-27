@@ -64,9 +64,25 @@ services:
       start_period: 60s
     restart: on-failure
 
+  initiate-rs0: # This is a workaround to ensure the replica set is initialized
+    image: mongo:7.0.12
+    networks:
+      - notesnook
+    depends_on:
+      - notesnook-db
+    command: >
+      /bin/sh -c "
+        until echo 'db.runCommand("ping").ok' | mongosh mongodb://notesnook-db:27017 --quiet; do
+          echo 'Waiting for MongoDB to be ready...';
+          sleep 5;
+        done;
+        mongosh mongodb://notesnook-db:27017 --eval 'rs.initiate(); rs.status();'
+      "
+
   mongo-express:
     image: mongo-express
     hostname: mongo-express
+    restart: on-failure
     networks:
       - notesnook
     environment:
@@ -74,7 +90,8 @@ services:
     ports:
       - 8081:8081
     depends_on:
-      - notesnook-db
+      initiate-rs0:
+        condition: service_completed_successfully
 
   notesnook-s3:
     image: minio/minio:RELEASE.2024-07-29T22-14-52Z
@@ -167,15 +184,6 @@ services:
       S3_SERVICE_URL: "${ATTACHMENTS_SERVER_PUBLIC_URL}"
       S3_REGION: "us-east-1"
       S3_BUCKET_NAME: "attachments"
-
-  initiate-rs0:
-    image: mongo:7.0.12
-    networks:
-      - notesnook
-    depends_on:
-      - notesnook-db
-    command: >
-      mongosh mongodb://notesnook-db:27017 --eval "rs.initiate(); rs.status();"
 
   sse-server:
     image: streetwriters/sse:latest
